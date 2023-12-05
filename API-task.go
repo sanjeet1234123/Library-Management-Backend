@@ -2,22 +2,27 @@ package main
 
 import (
 	"log"
+    _ "github.com/lib/pq"
 	"github.com/gin-gonic/gin"
-	_ "github.com/lib/pq"
+	"github.com/gin-contrib/cors"
+
 )
 
 func main() {
-
 	db, err := initDB()
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer db.Close()
 
-	
-	router := gin.Default() //initialising gin router
+	router := gin.Default()
 
-	//middleware to pass the database connection to handlers
+	
+	config := cors.DefaultConfig()
+	config.AllowOrigins = []string{"http://localhost:3000"} 
+	config.AllowMethods = []string{"GET", "POST", "PUT", "DELETE"}
+	router.Use(cors.New(config))
+
 	router.Use(func(c *gin.Context) {
 		c.Set("db", db)
 		c.Next()
@@ -25,18 +30,19 @@ func main() {
 
 	router.POST("/library", createLibrary)
 	router.GET("/library", getAllLibrary)
-	router.POST("/book/:email", createBook)
+	router.POST("/book/create", createBook)
 	router.GET("/book", getAllBook)
-	router.PUT("/book/:isbn/:email", updateBookByISBN)
-	router.DELETE("/book/:isbn/:email", deleteBookByISBN)
+	router.PUT("/update/book/:isbn", updateBookByISBN)
+	router.DELETE("/book/:isbn", deleteBookByISBN)
 	router.POST("/user", createUser)
-	router.PUT("/user/:id/:email", updateUserByID)
-	router.GET("/book/:title", getBookByTitle)
-	router.POST("/request/:email", createRequest)
-	router.GET("/request/:email", getAllRequest)
-	router.PUT("/request/:reqid/:email", updateRequestByReqID)
+	router.POST("/user/login",loginUser)
+	router.PUT("/user/:id", updateUserByID)
+	router.GET("/book/:isbn", getBookByISBN)
+	router.POST("/request", createRequest)
+	router.GET("/getrequest", getAllRequest)
+	router.PUT("/request/:reqid", updateRequestByReqID)
 	router.GET("/user/:email", getAllUser)
-	router.POST("/issue/:email", createIssue)
+	router.POST("/issue", createIssue)
 
 	router.Run(":8870")
 }

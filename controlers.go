@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"example/API-task.go/models"
 	"net/http"
-
 	"github.com/gin-gonic/gin"
 	_ "github.com/lib/pq"
 )
@@ -19,14 +18,12 @@ func createUser(c *gin.Context) {
 		return
 	}
 
-	
 	tx, err := db.Begin()
 	if err != nil {
 		c.JSON(500, gin.H{"error": "Unable to begin transaction"})
 		return
 	}
 
-	
 	defer func() {
 		if r := recover(); r != nil {
 			tx.Rollback()
@@ -34,18 +31,18 @@ func createUser(c *gin.Context) {
 	}()
 
 	var id3 string
-	err3 := tx.QueryRow("SELECT role FROM users WHERE lib_id = $1", user.LibId).Scan(&id3)  //checking the role of library with lib id
+	err3 := tx.QueryRow("SELECT role FROM users WHERE lib_id = $1", user.LibId).Scan(&id3) // checking the role of library with lib id
 
-	// inserting admin role if admin not exits
+	// inserting admin role if admin not exists
 	if err3 != nil && id3 != "admin" {
-		stmt, err1 := tx.Prepare("INSERT INTO users (name, email, contact_number, role, lib_id) VALUES ($1, $2, $3, 'admin', $4)")
+		stmt, err1 := tx.Prepare("INSERT INTO users (name, email, contact_number, role, lib_id, password) VALUES ($1, $2, $3, 'admin', $4, $5)")
 		if err1 != nil {
 			tx.Rollback()
 			c.JSON(500, gin.H{"error": err1.Error()})
 			return
 		}
 		defer stmt.Close()
-		_, err2 := stmt.Exec(user.Name, user.Email, user.ContactNumber, user.LibId)
+		_, err2 := stmt.Exec(user.Name, user.Email, user.ContactNumber, user.LibId, user.Password)
 		if err2 != nil {
 			tx.Rollback()
 			c.JSON(500, gin.H{"error2": err2.Error()})
@@ -53,65 +50,93 @@ func createUser(c *gin.Context) {
 		}
 	}
 
-	//inserting reader role if admin exist
-	stmt, err1 := tx.Prepare("INSERT INTO users (name, email, contact_number, role, lib_id) VALUES ($1, $2, $3, 'reader', $4)")
+	// inserting reader role if admin exists
+	stmt, err1 := tx.Prepare("INSERT INTO users (name, email, contact_number, role, lib_id, password) VALUES ($1, $2, $3, 'reader', $4, $5)")
 	if err1 != nil {
 		tx.Rollback()
 		c.JSON(500, gin.H{"error": err1.Error()})
 		return
 	}
 	defer stmt.Close()
-	_, err2 := stmt.Exec(user.Name, user.Email, user.ContactNumber, user.LibId)
+	_, err2 := stmt.Exec(user.Name, user.Email, user.ContactNumber, user.LibId, user.Password)
 	if err2 != nil {
 		tx.Rollback()
 		c.JSON(500, gin.H{"error2": err2.Error()})
 		return
 	}
 
-	
 	err = tx.Commit()
 	if err != nil {
 		c.JSON(500, gin.H{"error": "Failed to commit transaction"})
 		return
 	}
 
-
 	c.JSON(201, user)
+}
+func loginUser(c *gin.Context) {
+	db := c.MustGet("db").(*sql.DB)
+
+	var loginData struct {
+		Email    string `json:"email" binding:"required"`
+		Password string `json:"password" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&loginData); err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+
+	var user models.User
+	query := "SELECT id, name, email, contact_number, role, lib_id FROM users WHERE email = $1 AND password = $2"
+	err := db.QueryRow(query, loginData.Email, loginData.Password).
+		Scan(&user.ID, &user.Name, &user.Email, &user.ContactNumber, &user.Role, &user.LibId)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			c.JSON(401, gin.H{"error": "Invalid email or password"})
+			return
+		}
+
+		c.JSON(500, gin.H{"error": "Internal Server Error"})
+		return
+	}
+
+	c.JSON(200, gin.H{"message": "Login successful", "user": user, "role": user.Role})
 }
 //function to get all users
 func getAllUser(c *gin.Context) {
-	db := c.MustGet("db").(*sql.DB)
+    db := c.MustGet("db").(*sql.DB)
     email := c.Param("email")
-	var role string
-	err := db.QueryRow("SELECT role FROM Users WHERE email = $1", email).Scan(&role)
-	if err != nil || role != "admin" {
-		c.JSON(403, gin.H{"error": "Not authorized as Admin"})
-		return
-	}
-	
-	rows, err := db.Query("SELECT * FROM users")
-	if err != nil {
-		c.JSON(500, gin.H{"error": err.Error()})
-		return
-	}
-	defer rows.Close()
+    var role string
+    err := db.QueryRow("SELECT role FROM Users WHERE email = $1", email).Scan(&role)
+    if err != nil || role != "admin" {
+        c.JSON(403, gin.H{"error": "Not authorized as Admin"})
+        return
+    }
 
-	users := []models.User{}
-	for rows.Next() {
-		var user models.User
-		if err := rows.Scan(&user.ID, &user.Name, &user.Email, &user.ContactNumber, &user.Role, &user.LibId); err != nil {
-			c.JSON(500, gin.H{"error": err.Error()})
-			return
-		}
-		users = append(users, user)
-	}
+    rows, err := db.Query("SELECT id, name, email, contact_number, role, lib_id FROM users")
+    if err != nil {
+        c.JSON(500, gin.H{"error": err.Error()})
+        return
+    }
+    defer rows.Close()
 
-	c.JSON(200, users)
+    users := []models.User{}
+    for rows.Next() {
+        var user models.User
+        if err := rows.Scan(&user.ID, &user.Name, &user.Email, &user.ContactNumber, &user.Role, &user.LibId); err != nil {
+            c.JSON(500, gin.H{"error": err.Error()})
+            return
+        }
+        users = append(users, user)
+    }
+
+    c.JSON(200, users)
 }
 
 //updating  a user by admin
 func updateUserByID(c *gin.Context) {
-	email := c.Param("email")
+
 	id := c.Param("id")
 
 	var user models.User
@@ -123,12 +148,7 @@ func updateUserByID(c *gin.Context) {
 		return
 	}
 
-	var role string
-	err := db.QueryRow("SELECT role FROM Users WHERE email = $1", email).Scan(&role)
-	if err != nil || role != "admin" {
-		c.JSON(403, gin.H{"error": "Not authorized as Admin"})
-		return
-	}
+
 
 	stmt, err := db.Prepare("UPDATE users SET role=$1 WHERE id=$2")
 
@@ -235,7 +255,6 @@ func getAllLibrary(c *gin.Context) {
 }
 
 func createBook(c *gin.Context) {
-	email := c.Param("email")
 	db := c.MustGet("db").(*sql.DB)
 	var book models.Book
 	if err := c.ShouldBindJSON(&book); err != nil {
@@ -254,13 +273,6 @@ func createBook(c *gin.Context) {
 		}
 	}()
 
-	var role string
-	err = tx.QueryRow("SELECT role FROM Users WHERE email = $1", email).Scan(&role)
-	if err != nil || role != "admin" {
-		tx.Rollback()
-		c.JSON(403, gin.H{"error": "Not authorized as Admin"})
-		return
-	}
 
 	//check if book already exists
 	row := tx.QueryRow("SELECT totalcopies, availablecopies FROM bookinventory WHERE isbn = $1 AND libid = $2", book.ISBN, book.LibID)
@@ -312,8 +324,15 @@ func createBook(c *gin.Context) {
 func getAllBook(c *gin.Context) {
 	db := c.MustGet("db").(*sql.DB)
 
-	rows, err := db.Query("SELECT isbn, libid, title, authors, publisher, version, totalcopies, availablecopies FROM bookinventory")
+	tx, err := db.Begin()
 	if err != nil {
+		c.JSON(500, gin.H{"error": "Failed to start transaction"})
+		return
+	}
+
+	rows, err := tx.Query("SELECT isbn, libid, title, authors, publisher, version, totalcopies, availablecopies FROM bookinventory")
+	if err != nil {
+		tx.Rollback()
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
 	}
@@ -323,17 +342,19 @@ func getAllBook(c *gin.Context) {
 	for rows.Next() {
 		var book models.Book
 		if err := rows.Scan(&book.ISBN, &book.LibID, &book.Title, &book.Author, &book.Publisher, &book.Version, &book.TotalCopies, &book.AvailableCopies); err != nil {
+			tx.Rollback()
 			c.JSON(500, gin.H{"error": err.Error()})
 			return
 		}
 		books = append(books, book)
 	}
 
+	tx.Commit()
+
 	c.JSON(200, books)
 }
 
 func updateBookByISBN(c *gin.Context) {
-	email := c.Param("email")
 	ISBN := c.Param("isbn")
 	db := c.MustGet("db").(*sql.DB)
 	var book models.Book
@@ -359,14 +380,6 @@ func updateBookByISBN(c *gin.Context) {
 	if isbnChecker != ISBN {
 		tx.Rollback()
 		c.JSON(403, gin.H{"error": "please enter correct isbn in url"})
-		return
-	}
-
-	var role string
-	err = tx.QueryRow("SELECT role FROM Users WHERE email = $1", email).Scan(&role)
-	if err != nil || role != "admin" {
-		tx.Rollback()
-		c.JSON(403, gin.H{"error": "Not authorized as Admin"})
 		return
 	}
 
@@ -398,7 +411,7 @@ func updateBookByISBN(c *gin.Context) {
 
 func deleteBookByISBN(c *gin.Context) {
 	isbn := c.Param("isbn")  
-	email := c.Param("email") 
+	 
 
 	db := c.MustGet("db").(*sql.DB)
 
@@ -416,14 +429,6 @@ func deleteBookByISBN(c *gin.Context) {
 	}()
    
 	copiesToRemove := 1 
-	
-	var role string
-	err = tx.QueryRow("SELECT role FROM Users WHERE email = $1", email).Scan(&role)
-	if err != nil || role != "admin" {
-		tx.Rollback()
-		c.JSON(403, gin.H{"error": "Not authorized as Admin"})
-		return
-	}
 
 	//retrieve the current counts of the book
 	row := tx.QueryRow("SELECT totalcopies, availablecopies FROM bookinventory WHERE isbn = $1", isbn)
@@ -469,12 +474,11 @@ func deleteBookByISBN(c *gin.Context) {
 	c.JSON(200, gin.H{"message": "Book removed successfully"})
 }
 
+func getBookByISBN(c *gin.Context) {
+	isbn := c.Param("isbn")
 
-func getBookByTitle(c *gin.Context) {
-	searchTerm := c.Param("title")
 	db := c.MustGet("db").(*sql.DB)
 
-	
 	tx, err := db.BeginTx(context.TODO(), &sql.TxOptions{
 		Isolation: sql.LevelSerializable,
 		ReadOnly:  true,
@@ -487,7 +491,7 @@ func getBookByTitle(c *gin.Context) {
 
 	var book models.Book
 
-	err = tx.QueryRow("SELECT isbn,libid, title, authors, publisher,version, totalcopies, availablecopies FROM bookinventory WHERE title =$1 OR authors =$1 OR publisher =$1 ORDER BY title;", searchTerm).Scan(&book.ISBN, &book.LibID, &book.Title, &book.Author, &book.Publisher, &book.Version, &book.TotalCopies, &book.AvailableCopies)
+	err = tx.QueryRow("SELECT isbn, libid, title, authors, publisher, version, totalcopies, availablecopies FROM bookinventory WHERE isbn = $1;", isbn).Scan(&book.ISBN, &book.LibID, &book.Title, &book.Author, &book.Publisher, &book.Version, &book.TotalCopies, &book.AvailableCopies)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			c.JSON(404, gin.H{"error": "Book not found"})
@@ -501,12 +505,11 @@ func getBookByTitle(c *gin.Context) {
 }
 
 func createRequest(c *gin.Context) {
-	email := c.Param("email")
 	db := c.MustGet("db").(*sql.DB)
 	var requestEvents models.RequestEvents
 
 	if err := c.ShouldBindJSON(&requestEvents); err != nil {
-		c.JSON(400, gin.H{"error1": err.Error()})
+		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -515,17 +518,11 @@ func createRequest(c *gin.Context) {
 		c.JSON(500, gin.H{"error": "Failed to start transaction"})
 		return
 	}
-	var role string
-	err = tx.QueryRow("SELECT role FROM Users WHERE email = $1", email).Scan(&role)
-	if err != nil || role != "reader" {
-		tx.Rollback()
-		c.JSON(403, gin.H{"error": "Not authorized as reader"})
-		return
-	}
 
-	stmt, err := tx.Prepare("INSERT INTO requestevents ( bookid, readerid, requestdate, approvaldate, approverid, requesttype) VALUES ($1, $2, $3, $4, $5, $6)")
+
+	stmt, err := tx.Prepare("INSERT INTO requestevents (bookid, readerid, requestdate, approvaldate, approverid, requesttype) VALUES ($1, $2, $3, $4, $5, $6)")
 	if err != nil {
-		tx.Rollback() 
+		tx.Rollback()
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
 	}
@@ -533,32 +530,25 @@ func createRequest(c *gin.Context) {
 
 	result, err := stmt.Exec(requestEvents.BookID, requestEvents.ReaderID, requestEvents.RequestDate, requestEvents.ApprovalDate, requestEvents.ApproverID, requestEvents.RequestType)
 	if err != nil {
-		tx.Rollback() 
-		c.JSON(500, gin.H{"error2": err.Error()})
+		tx.Rollback()
+		c.JSON(500, gin.H{"error": err.Error()})
 		return
 	}
 
 	id, _ := result.LastInsertId()
 	requestEvents.ReqID = int(id)
 
-	err = tx.Commit() 
+	err = tx.Commit()
 	if err != nil {
-		c.JSON(500, gin.H{"error3": "Failed to commit transaction"})
+		c.JSON(500, gin.H{"error": "Failed to commit transaction"})
 		return
 	}
 
 	c.JSON(201, requestEvents)
 }
-
 func getAllRequest(c *gin.Context) {
 	db := c.MustGet("db").(*sql.DB)
-	email := c.Param("email")
-	var role string
-	err := db.QueryRow("SELECT role FROM Users WHERE email = $1", email).Scan(&role)
-	if err != nil || role != "admin" {
-		c.JSON(403, gin.H{"error": "Not authorized as Admin"})
-		return
-	}
+
 	tx, err := db.Begin()
 	if err != nil {
 		c.JSON(500, gin.H{"error": "Failed to start transaction"})
@@ -590,75 +580,60 @@ func getAllRequest(c *gin.Context) {
 }
 
 func updateRequestByReqID(c *gin.Context) {
-	db := c.MustGet("db").(*sql.DB)
-	email := c.Param("email")
-	ReqId := c.Param("reqid")
-	var requestEvents models.RequestEvents
+    db := c.MustGet("db").(*sql.DB)
+    ReqID := c.Param("reqid")
+    var requestEvents models.RequestEvents
 
-	var role string
-	err := db.QueryRow("SELECT role FROM Users WHERE email = $1", email).Scan(&role)
-	if err != nil || role != "admin" {
-		c.JSON(403, gin.H{"error": "Not authorized as Admin"})
-		return
-	}
+    if err := c.ShouldBindJSON(&requestEvents); err != nil {
+        c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid data"})
+        return
+    }
 
-	if err := c.ShouldBindJSON(&requestEvents); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid data"})
-		return
-	}
+    tx, err := db.Begin()
+    if err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to start transaction"})
+        return
+    }
 
-	tx, err := db.Begin()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to start transaction"})
-		return
-	}
-   
-	stmt, err := tx.Prepare("UPDATE requestevents SET approvaldate=$1 ,approverid=$2 WHERE reqid=$3")
-	if err != nil {
-		tx.Rollback() 
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	defer stmt.Close()
-     
-	result, err := stmt.Exec(requestEvents.ApprovalDate, requestEvents.ApproverID, ReqId)
-	if err != nil {
-		tx.Rollback() 
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
+    stmt, err := tx.Prepare("UPDATE requestevents SET approvaldate=$1, approverid=$2, requesttype=$3 WHERE reqid=$4")
+    if err != nil {
+        tx.Rollback()
+        c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+        return
+    }
+    defer stmt.Close()
 
-	rowsAffected, err := result.RowsAffected()
-    
-	if err != nil {
-		tx.Rollback() 
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-    //if no rows affected rollback
-	if rowsAffected == 0 {
-		tx.Rollback()
-		c.JSON(http.StatusNotFound, gin.H{"error": "Request not found"})
-		return
-	}
+    result, err := stmt.Exec(requestEvents.ApprovalDate, requestEvents.ApproverID, requestEvents.RequestType, ReqID)
+    if err != nil {
+        tx.Rollback()
+        c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+        return
+    }
 
-	tx.Commit()
-	c.JSON(http.StatusOK, ReqId)
+    rowsAffected, err := result.RowsAffected()
+    if err != nil {
+        tx.Rollback()
+        c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+        return
+    }
+
+    // If no rows affected, rollback
+    if rowsAffected == 0 {
+        tx.Rollback()
+        c.JSON(http.StatusNotFound, gin.H{"error": "Request not found"})
+        return
+    }
+
+    tx.Commit()
+    c.JSON(http.StatusOK, ReqID)
 }
 func createIssue(c *gin.Context) {
 	db := c.MustGet("db").(*sql.DB)
-	email := c.Param("email")
+
 	var issueRegistry models.IssueRegistery
 
 	if err := c.ShouldBindJSON(&issueRegistry); err != nil {
 		c.JSON(400, gin.H{"error1": err.Error()})
-		return
-	}
-
-	var role string
-	err := db.QueryRow("SELECT role FROM Users WHERE email = $1", email).Scan(&role)
-	if err != nil || role != "admin" {
-		c.JSON(403, gin.H{"error": "Not authorized as Admin"})
 		return
 	}
 

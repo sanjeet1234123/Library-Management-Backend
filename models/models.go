@@ -1,7 +1,7 @@
 package models
 
 type Book struct {
-	ISBN            int    `json:"isbn"`      
+	ISBN            int    `json:"isbn"`
 	LibID           int    `json:"libId"`
 	Title           string `json:"title"`
 	Author          string `json:"author"`
@@ -15,9 +15,10 @@ type User struct {
 	ID            int    `json:"id"`
 	Name          string `json:"name"`
 	Email         string `json:"email"`
-	ContactNumber int    `json:"contactNumber"`
+	ContactNumber string `json:"contact_number"`  // Use snake case
 	Role          string `json:"role"`
-	LibId         int    `json:"libId"`
+	LibId         int    `json:"lib_id"`           // Use snake case
+	Password      string `json:"password"`
 }
 type LibraryAdmin struct {
 	ID   int    `json:"Id"`
@@ -36,12 +37,11 @@ type IssueRegistery struct {
 
 }
 type RequestEvents struct {
-	ReqID        int       `json:"reqId"`
-	BookID       int       `json:"bookId"`   //fk book
-	ReaderID     int       `json:"readerId"` //fk user
+	ReqID        int    `json:"reqId"`
+	BookID       int    `json:"bookId"`   //fk book
+	ReaderID     int    `json:"readerId"` //fk user
 	RequestDate  string `json:"requestDate"`
 	ApprovalDate string `json:"approvalDate"`
-	ApproverID   int       `json:"approverId"` //fk admin
-	RequestType  string    `json:"requestType"`
+	ApproverID   int    `json:"approverId"` //fk admin
+	RequestType  string `json:"requestType"`
 }
-

@@ -31,6 +31,7 @@ func initDB() (*sql.DB, error) {
         email VARCHAR(255) UNIQUE NOT NULL,
         contact_number VARCHAR(255) NOT NULL,
         role VARCHAR(255) NOT NULL,
+        password VARCHAR(255) NOT NULL,
         lib_id INT NOT NULL,
         FOREIGN KEY (lib_id) REFERENCES Library (id)
       );
